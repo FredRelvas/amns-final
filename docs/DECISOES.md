@@ -176,3 +176,65 @@ O KNN como sonda de informação preservada foi **removido**: o escopo ficou só
 ### Pendências
 
 - Quais configurações do sintético testar (p, ruído, separação) fica em aberto para quem trabalhar na P3 e na P5.
+
+## Issue #4: Regras para escolher d (P3)
+
+Todas as regras ficam em `rules.py`, recebem o `X_train` já pré-processado e devolvem um `int`. Nenhuma usa rótulos.
+
+### Autovalores (base de todas as regras)
+
+- **O que se calcula:** os autovalores de `XᵀX/n`, depois de recentralizar X (inofensivo, pois o `Preprocessor` já centraliza). Só os `min(n−1, p)` possivelmente não nulos entram.
+- **Como:** pela menor das duas matrizes de Gram (`XᵀX` ou `XXᵀ`). Com p > n (`tumors`, p/n ≈ 100) nunca se monta uma matriz p×p.
+- **Consequência:** com p > n, nenhuma regra devolve d > n−1, que é o limite do PCA.
+
+### Decisões por regra
+
+| Regra | Decisão | Motivo |
+|---|---|---|
+| Marchenko-Pastur | borda σ²·(1+√(p/n))², com γ = p/n; d é o número de autovalores acima dela | definição da seção 3.2 |
+| MP, σ² estimado | σ² = mediana(autovalores) / mediana esperada de ruído N(0,1) n×p, média de 30 simulações (`n_sim`, `seed`) | a estimativa absorve a escala dos dados; o resultado de cada (n, p) fica em cache, então o sweep não repete a simulação |
+| MP, σ² = 1 | `sigma2=1` | só faz sentido com dados padronizados ou sintético com `noise_std=1` |
+| Análise paralela | `rng.permuted` embaralha cada coluna de forma independente; percentil 95 por índice; **conta até o primeiro autovalor que não passa** | ver abaixo |
+| d = K ou K−1 | `d_from_K` | já estava pronta |
+| 90% da variância | menor d com variância acumulada ≥ 0,90 (com tolerância de 1e-12 para o caso exato) | — |
+| Kaiser | autovalores acima de `soma/p`, ou seja, da média sobre as **p** dimensões | com p > n−1 existem menos de p autovalores; tirar a média só dos existentes inflaria a média e subestimaria d. Com dados padronizados é o usual "> 1". |
+| Cotovelo | ponto da curva de autovalores mais distante da reta entre o primeiro e o último, com os dois eixos reescalados para [0, 1]. d é o **número de pontos antes do cotovelo** (mínimo 1) | escolha nossa, a issue não fixava um método. Segue o teste de Cattell: o próprio ponto do cotovelo já é cauda. |
+
+### Desvio em relação à issue: análise paralela para no primeiro fracasso
+
+A issue diz "contar autovalores acima do percentil 95". Contar todas as ultrapassagens superestima d: cada índice tem ~5% de chance de passar, então em ruído puro o resultado esperado é 5% dos índices.
+
+Em n=500 e p=50, com 40 sementes de ruído puro, a versão que soma tudo devolveu em média **2,5 componentes** (até 9). A regra de parada de Horn conta só a sequência inicial de autovalores acima do limiar e devolve 0 ou 1 em ruído puro. Em dados com sinal forte as duas coincidem.
+
+### Testes
+
+- **Autovalores conhecidos:** matriz com autovalores exatos para 90% da variância, Kaiser e cotovelo.
+- **Ruído puro (n=500, p=50), 5 sementes:** MP (σ² = 1 e estimado) e análise paralela devolvem no máximo 1. Escala 7× maior: MP estimado continua no máximo 1; σ² = 1 devolve 50 (a regra usada fora do domínio).
+- **5 spikes plantados:** MP e análise paralela devolvem 5.
+- **Sintético (n=1000, p=50, K=10):** MP (σ² = 1 e estimado) e análise paralela devolvem 9 = K−1.
+- **p > n:** nenhuma regra passa de n−1.
+
+### Resultados (treino de 70%, dados pré-processados como no sweep)
+
+| Dataset (n treino × p) | MP σ²=1 | MP σ² est. | Análise paralela | 90% var. | Kaiser | Cotovelo |
+|---|---|---|---|---|---|---|
+| `digits` (1257 × 60), sementes 0, 1, 2 | 44 | 25 a 26 | 9 | 21 | 14 | 12 |
+| `synthetic` K=10 (700 × 50) | 9 | 9 | 9 | 40 | 10 | 9 |
+| `synthetic` K=10 (700 × 500) | 9 | 9 | 14 | 293 | 197 | 103 |
+| `synthetic` K=10 (70 × 500) | 1 | 1 | 0 | 56 | 69 | 33 |
+| `mnist` n=5000 (3500 × 652) | 601 | 225 | 42 | 85 | 78 | 42 |
+| `mnist` n=1000 (700 × 592) | 507 | 152 | 31 | 75 | 73 | 42 |
+| `mnist` n=500 (350 × 555) | 349 | 94 | 26 | 65 | 71 | 26 |
+| `tumors` (121 × 12533) | 19 | 49 | 21 | 78 | 120 | 8 |
+
+O verdadeiro d no sintético é K−1 = 9.
+
+**O que se lê:**
+- **Sintético:** MP e análise paralela acham 9 com p/n baixo (0,07); o 90% da variância e o Kaiser erram. Com p = 500 (p/n ≈ 0,7), só o MP continua em 9; a análise paralela sobe para 14. Com n = 70 (p/n ≈ 7) todas as regras de ruído falham, porque o sinal some dentro do ruído (primeiro indício para a H5).
+- **`digits`:** MP σ²=1 devolve 44, não os 12 do piloto. A diferença vem do pré-processamento: o piloto padronizou, e aqui os pixels só são centralizados (ver "Padronização" na #2), então σ²=1 não é a variância do ruído. Ver "Limitação" abaixo.
+- **MNIST:** as regras de ruído divergem muito (26 a 601). MP σ²=1 é inútil sem padronização, e o MP estimado cai de 225 para 94 quando p/n sobe, o que combina com a H2.
+
+### Limitação a declarar
+
+- **MP σ² = 1 nas imagens:** com dados só centralizados, σ² = 1 não é o nível de ruído, e a regra devolve centenas de componentes. Use essa variante apenas no `tumors` e no sintético com `noise_std=1`.
+- **Custo:** a análise paralela e a simulação do MP custam ~20 s com 3500 × 652. Se o sweep com MNIST completo ficar lento, reduzir `n_perm` ou `n_sim`.
