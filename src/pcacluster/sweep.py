@@ -23,7 +23,7 @@ def run_sweep(
     Preprocessor and PCA are fitted on the training split only; the clustering
     is fitted on train and predicted on test. Returns one row per (seed, d)
     with columns: dataset, n, p, p_over_n, seed, algo, d, K, ari_train,
-    ari_test, nmi_test, knn_acc_test, recon_err_test, agreement_full (ARI
-    against the clustering in the full dimension).
+    ari_test, nmi_test, recon_err_test, agreement_full (ARI against the
+    clustering in the full dimension).
     """
     raise NotImplementedError
