@@ -12,7 +12,7 @@ Documento de contexto para o agente de código. Reúne tudo o que o grupo discut
 6. Criar labels, milestones e as **issues da seção 8** com `gh`. Uma issue por tarefa, com critérios de aceitação em checkboxes.
 7. Fazer commit e push. Escrever o `README.md` em português, curto, com como instalar (`uv sync`), como rodar os testes e como o trabalho está organizado.
 
-Convenções: código, nomes de funções e commits em inglês; README, docs e issues em português do Brasil.
+Convenções: código e nomes de funções em inglês; commits, README, docs e issues em português do Brasil.
 
 ## 1. Contexto acadêmico
 
