@@ -2,7 +2,7 @@
 
 Trabalho final de Aprendizado Não Supervisionado (IA/UFG). Pergunta: reduzir a dimensão com PCA antes do clustering melhora, piora ou é indiferente? E regras sem rótulos para escolher o número de componentes *d* acertam o melhor *d* de um sweep completo?
 
-Contexto completo em [`docs/CONTEXTO_PROJETO.md`](docs/CONTEXTO_PROJETO.md) e resumo em [`docs/trabalho_final_pca_clustering.pdf`](docs/trabalho_final_pca_clustering.pdf).
+Contexto completo em [`docs/CONTEXTO_PROJETO.md`](docs/CONTEXTO_PROJETO.md) e resumo em [`docs/trabalho_final_pca_clustering.pdf`](docs/trabalho_final_pca_clustering.pdf). As decisões tomadas em cada parte, com os motivos, ficam em [`docs/DECISOES.md`](docs/DECISOES.md).
 
 ## Instalação
 

@@ -1,17 +1,21 @@
 """Label-free rules to choose the number of PCA components d.
 
-Every rule receives X_train already preprocessed (see data.Preprocessor).
+Every rule receives X_train already preprocessed (see data.Preprocessor):
+standardized or only centered, depending on the dataset. Rules work on the
+eigenvalues of its covariance matrix; for standardized data this is the
+correlation matrix and the rules reduce to their usual definitions.
 """
 
 import numpy as np
 
 
 def d_marchenko_pastur(X_train: np.ndarray, sigma2: float | str = "median") -> int:
-    """Count correlation eigenvalues above the edge sigma2 * (1 + sqrt(p/n))**2.
+    """Count eigenvalues above the edge sigma2 * (1 + sqrt(p/n))**2.
 
     sigma2='median' estimates the noise level as median(eigenvalues) divided by
     the expected median eigenvalue of N(0, 1) noise of the same shape (~30
-    simulations).
+    simulations); it works with or without standardization. A fixed sigma2=1
+    only makes sense for standardized data or synthetic data with noise_std=1.
     """
     raise NotImplementedError
 
@@ -35,7 +39,7 @@ def d_variance_threshold(X_train: np.ndarray, frac: float = 0.90) -> int:
 
 
 def d_kaiser(X_train: np.ndarray) -> int:
-    """Count eigenvalues > 1."""
+    """Count eigenvalues above their mean (the usual > 1 for standardized data)."""
     raise NotImplementedError
 
 

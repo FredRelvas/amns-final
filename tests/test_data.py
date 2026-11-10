@@ -16,6 +16,13 @@ def test_preprocessor_uses_train_statistics_only():
     assert pre.transform(X_test).mean() > 10
 
 
+def test_preprocessor_without_scale_only_centers():
+    X_train = np.random.default_rng(0).normal(scale=5, size=(50, 3))
+    Z = Preprocessor(scale=False).fit(X_train).transform(X_train)
+    assert np.allclose(Z.mean(axis=0), 0)
+    assert np.allclose(Z.std(axis=0), X_train.std(axis=0))
+
+
 def test_preprocessor_drops_columns_constant_in_train():
     X_train = np.array([[1.0, 5.0], [2.0, 5.0], [3.0, 5.0]])
     X_test = np.array([[1.0, 7.0]])

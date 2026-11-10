@@ -13,6 +13,10 @@ OPENML_NAMES = {
     "fashion_mnist": "Fashion-MNIST",
     "tumors": "11_Tumors",
 }
+# Standardize only datasets whose features have different units or scales
+# (genes). Pixels and synthetic coordinates share one unit, so they are only
+# centered. Criterion and evidence in docs/DECISOES.md.
+STANDARDIZE = {"tumors"}
 
 
 def load_dataset(
@@ -88,13 +92,17 @@ def split(
 
 
 class Preprocessor:
-    """Drops constant columns and standardizes, fitted on training data only."""
+    """Drops constant columns, centers and, if scale, divides by the standard
+    deviation. Fitted on training data only."""
+
+    def __init__(self, scale: bool = True):
+        self.scale = scale
 
     def fit(self, X_train: np.ndarray) -> Self:
         std = X_train.std(axis=0)
         self.keep_ = std > 0
         self.mean_ = X_train.mean(axis=0)[self.keep_]
-        self.std_ = std[self.keep_]
+        self.std_ = std[self.keep_] if self.scale else 1.0
         return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:
