@@ -501,3 +501,176 @@ Com só a margem, 50 das 890 combinações de dataset, algoritmo e *d* teriam ou
 - O `run_sweep` com `test_size=0` serve para o p/n alto, e o script sorteia uma subamostra por semente com `--n`. Exemplo: `--dataset mnist --n 500 --test-size 0`.
 - A diferença treino–teste da H4 sai das colunas `ari_train` e `ari_test` do `sweep.csv`.
 - A perda de cada regra em função de p/n (H5) sai do `compare.csv` de cada n.
+
+## Issue #6: p/n, overfitting e ponto de quebra (P5)
+
+O código fica em `pn.py` (análise ao longo de p/n), `plots.py` (`plot_pn_rules` e `plot_pn_gap`) e `scripts/run_pn.py` (um comando por dataset). Como rodar está em `docs/DESENHO_P5.md`. Tudo reaproveita o `run_sweep` e os critérios da #5, sem critério novo de comparação.
+
+### O que foi rodado
+
+| Dataset | n | p/n | Divisão |
+|---|---|---|---|
+| MNIST (p = 784) | 70 000, 35 000, 10 000, 3500, 1400, 700, 500, 350, 250, 150, 100 | 0,011 a 7,8 | com split em todos; também sem split nos n ≤ 3500 |
+| Sintético (p = 1000, K = 10, ruído 1, separação 5) | 4000, 2000, 1000, 500, 250, 125 | 0,25 a 8 | com e sem split em todos |
+
+- **Configuração comum:** K-means e GMM, K = 10, sementes 0 a 9 e a grade do MNIST da #5 (`1-30,35-100:5,120-600:40`) mais os *d* das regras. Os valores acima de n_treino − 1 são pulados, como na #5.
+- **Tempo de execução:**
+  - MNIST até n = 350: ~1h25 numa máquina com i9-14900K, em 3 processos de 8 threads. Com 32 threads, o OpenBLAS ficou ~20× mais lento no cálculo dos autovalores.
+  - Sintético e n ≤ 250 do MNIST: minutos num MacBook Air M1.
+- **Conferência com a #5:** o n = 10 000 reproduz os números dela.
+  - K-means: sem PCA 0,365 ± 0,015 e `oracle_cv` 0,360 (indiferente, −0,005).
+  - GMM: `oracle_cv` 0,318 (melhora, +0,152).
+
+### Decisões
+
+| Item | Decisão | Motivo |
+|---|---|---|
+| p/n | coluna `p_over_n` do `run_sweep`: p do dataset sobre o n que entra (784/n no MNIST) | é a convenção da #5. Com split, o treino tem 0,7·n, e o p/n do treino é 1,43 vez maior |
+| A regra acerta? (`rule_vs_oracle`) | para cada semente, ARI no *d* da regra menos o ARI do `oracle_cv` na mesma semente, classificado pelo `_classify` da #5 (margem de 1 DP do sem PCA **e** intervalo de 95%). Erra se a classe é "piora", acerta caso contrário | o `oracle_cv` é a referência justa da #5. O `compare.csv` só traz a perda média, e para dizer acertou/errou é preciso o mesmo teste pareado usado para melhora/piora |
+| Sem sinal (`has_signal`) | um p/n tem sinal enquanto o `oracle_cv` mantém pelo menos 50% do valor no menor p/n | quando nem o melhor *d* agrupa, todo *d* rende ≈ 0 e todas as regras "acertam" sem mérito. O 50% é escolha nossa, sem fonte |
+| Ponto de quebra (`breaking_point`) | o menor p/n a partir do qual a regra erra em todos os p/n maiores que têm sinal. É reportado como intervalo (último acerto, primeiro erro) | um erro isolado seguido de acertos é ruído, não quebra |
+| Overfitting (`train_test_gap`) | gap = `ari_train − ari_test`. O gap sem PCA e o gap no *d* do `oracle_cv` são comparados semente a semente pelo `_classify`, com margem de 1 DP do gap sem PCA. "Melhora" quer dizer que o PCA reduz o gap | mesma régua da #5, aplicada ao gap. Só existe com split |
+| Sintético | p = 1000, ruído 1, separação 5 | p alto permite chegar a p/n = 8 com n ≥ 125. Com separação 5, o sinal é claro em p/n baixo e some dentro da faixa. A teoria (transição BBP) prevê a perda do sinal perto de p/n ≈ (separação²/K)² = 6,25 |
+| K estimado | fora | o critério de K continua em aberto (#3) |
+
+### Resultados
+
+Todas as tabelas são com split, exceto onde indicado. ✓ = acerta, ✗ = erra, · = sem sinal (não entra no ponto de quebra). A última linha de cada tabela traz o ARI do `oracle_cv`.
+
+#### H5 no sintético: há ponto de quebra
+
+K-means:
+
+| Regra \ p/n | 0,25 | 0,5 | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|---|---|
+| MP, σ² estimado | ✓ | ✓ | ✓ | ✗ | · | · |
+| MP, σ² = 1 | ✓ | ✓ | ✓ | ✗ | · | · |
+| análise paralela | ✓ | ✓ | ✓ | ✗ | · | · |
+| Gavish e Donoho | ✓ | ✗ | ✗ | ✗ | · | · |
+| d = K | ✓ | ✓ | ✓ | ✗ | · | · |
+| d = K − 1 | ✓ | ✓ | ✓ | ✗ | · | · |
+| 90% da variância | ✓ | ✗ | ✗ | ✗ | · | · |
+| Kaiser | ✓ | ✓ | ✗ | ✗ | · | · |
+| cotovelo | ✓ | ✓ | ✗ | ✗ | · | · |
+| sem PCA | ✓ | ✗ | ✗ | ✗ | · | · |
+| `oracle_cv` | 0,96 | 0,95 | 0,90 | 0,59 | 0,10 | 0,00 |
+
+GMM:
+
+| Regra \ p/n | 0,25 | 0,5 | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|---|---|
+| MP, σ² estimado | ✓ | ✓ | ✓ | · | · | · |
+| MP, σ² = 1 | ✓ | ✓ | ✓ | · | · | · |
+| análise paralela | ✓ | ✓ | ✓ | · | · | · |
+| Gavish e Donoho | ✓ | ✗ | ✗ | · | · | · |
+| d = K | ✓ | ✓ | ✓ | · | · | · |
+| d = K − 1 | ✓ | ✓ | ✓ | · | · | · |
+| 90% da variância | ✓ | ✗ | ✗ | · | · | · |
+| Kaiser | ✓ | ✗ | ✗ | · | · | · |
+| cotovelo | ✓ | ✓ | ✗ | · | · | · |
+| sem PCA | ✓ | ✗ | ✗ | · | · | · |
+| `oracle_cv` | 0,89 | 0,92 | 0,75 | 0,23 | 0,03 | 0,05 |
+
+- **Pontos de quebra no K-means:**
+  - MP (os dois), análise paralela, d = K e d = K − 1: entre p/n 1 e 2.
+  - Kaiser e cotovelo: entre 0,5 e 1.
+  - Gavish e Donoho e 90% da variância: entre 0,25 e 0,5.
+- **As regras quebram antes do problema.** Em p/n 2 o melhor *d* ainda dá ARI 0,59, mas todas as regras erram. As perdas são de 0,08 (d = K) a 0,55 (Kaiser).
+- **No GMM o problema colapsa primeiro.** O sinal some em p/n 2, antes de MP, análise paralela e d = K quebrarem.
+- **Por que as regras de ruído quebram:** com p/n alto, os autovalores do sinal afundam abaixo da borda do ruído, e as regras param de vê-los. A mediana do *d* do MP com σ² estimado é 9, 9, 9, 4,5, 1 e 1 ao longo da faixa. A do Gavish e Donoho cai para 3 já em p/n 0,5, e por isso ele quebra cedo. Kaiser e 90% da variância fazem o contrário: escolhem centenas de componentes de ruído (Kaiser: de 428 a 86).
+- **Quebra antes do previsto:** a perda acontece entre p/n 1 e 2 (2,9 no treino), antes do limite assintótico de 6,25. Com n finito, os autovalores do sinal se misturam ao ruído antes do limite.
+- **Sem split:**
+  - Há mais sinal: `oracle_cv` de 0,83 (K-means) e 0,78 (GMM) em p/n 2, com colapso só em 4.
+  - O padrão se repete: MP e d = K quebram entre 1 e 2 no K-means, e a análise paralela é a única que acerta em p/n 2 nos dois algoritmos.
+  - No GMM, d = K e d = K − 1 também acertam em p/n 2.
+
+#### H5 no MNIST: não há quebra até p/n 7,8
+
+GMM:
+
+| Regra \ p/n | 0,011 | 0,022 | 0,078 | 0,22 | 0,56 | 1,1 | 1,6 | 2,2 | 3,1 | 5,2 | 7,8 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| MP, σ² estimado | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| MP, σ² = 1 | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | · |
+| análise paralela | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| Gavish e Donoho | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| d = K | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| d = K − 1 | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| 90% da variância | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | · |
+| Kaiser | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| cotovelo | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| sem PCA | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | · |
+| `oracle_cv` | 0,34 | 0,32 | 0,32 | 0,33 | 0,32 | 0,26 | 0,27 | 0,24 | 0,19 | 0,19 | 0,14 |
+
+K-means:
+
+- **Quase todas as regras acertam em toda a faixa.** As exceções são d = K em p/n 0,011 e 0,022 e d = K − 1 em 0,022.
+- **Essas três exceções são perdas de 0,015 a 0,027.** Elas só contam como erro porque, com 35 000 e 70 000 imagens, a margem é de 0,003 a 0,004.
+- **O `oracle_cv` vai de 0,37 a 0,24 e não há ponto sem sinal.**
+
+Leitura:
+
+- **No GMM, o erro fica do lado com muitos dados, o inverso da H5.** Com p/n ≤ 0,56, as regras (fora d = K, d = K − 1 e MP com σ² = 1) escolhem de 34 a 326 componentes, contra um melhor *d* perto de 8, e perdem de 0,05 a 0,20. A partir de p/n ≈ 1, acertam.
+- **O motivo é o *d* das regras de ruído, que cai com n.** O melhor *d* do GMM fica quase sempre entre 6 e 20. Com menos dados, as regras caem nessa faixa:
+
+  | Regra | *d* em p/n 0,011 | *d* em p/n 7,8 |
+  |---|---|---|
+  | MP, σ² estimado | 326 | 22 |
+  | Gavish e Donoho | 252 | 16 |
+  | análise paralela | 46 | 13 |
+
+- **Exceções no GMM:**
+  - d = K e d = K − 1 acertam em quase toda a faixa.
+  - MP com σ² = 1 erra em todos os p/n com sinal: escolhe de 104 a 644 componentes e perde de 0,15 a 0,27.
+- **Linha sem PCA no GMM:** passa a "acertar" a partir de p/n 1,1. Com poucos dados, o ganho do PCA no GMM fica dentro da margem.
+- **Colapso:** o MNIST só perde metade do sinal no GMM com split em n = 100, quando o treino tem 70 imagens para 10 classes.
+- **Sem split** (n ≤ 3500, p/n de 0,22 a 7,8): o padrão se repete.
+  - K-means: tudo acerta, exceto MP com σ² = 1 e sem PCA em p/n 7,8.
+  - GMM: d = K e d = K − 1 acertam em todos os p/n. As demais regras erram em algum p/n até 1,1 e acertam todas a partir de 1,6. O `oracle_cv` fica entre 0,28 e 0,36, sem colapso.
+- **Coerência com o `tumors` da #5:** lá, com p/n = 72, as regras de ruído tiveram as menores perdas no GMM. O padrão é o mesmo: em imagens e genes, p/n alto empurra essas regras para *d* pequenos, que é onde o GMM rende.
+
+#### H2: o *d* diminui com p/n?
+
+- **O *d* das regras de ruído cai com p/n em todos os casos:**
+  - MNIST: MP vai de 326 para 22 e a análise paralela de 46 para 13.
+  - Sintético: MP vai de 9 para 1, já que abaixo da borda não sobra componente.
+- **d = K e d = K − 1** são fixos por definição.
+- **O melhor *d* não tem padrão claro.** Mediana do *d* do `oracle_cv` ao longo de p/n:
+
+  | Caso | *d* do `oracle_cv` |
+  |---|---|
+  | MNIST, GMM | entre 6 e 21, exceto 93 em p/n 1,6 |
+  | MNIST, K-means | de 8 a 480, sem tendência |
+  | Sintético, K-means | de 200 a 10 |
+
+- **Onde a curva é plana, o melhor *d* é mal definido.** É o caso do K-means e dos dois algoritmos no sintético. O máximo cai em qualquer ponto do platô, então a tendência do melhor *d* não deve ser lida como resultado.
+
+#### H4: o PCA não reduz o overfitting
+
+Gap sem PCA e gap no *d* do `oracle_cv`, MNIST:
+
+| p/n | 0,011 | 0,022 | 0,078 | 0,22 | 0,56 | 1,1 | 1,6 | 2,2 | 3,1 | 5,2 | 7,8 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| GMM, sem PCA | 0,001 | 0,002 | 0,002 | 0,010 | 0,032 | 0,035 | 0,072 | 0,052 | 0,110 | 0,110 | 0,171 |
+| GMM, `oracle_cv` | 0,000 | 0,001 | 0,002 | 0,006 | 0,017 | 0,033 | 0,073 | 0,036 | 0,091 | 0,118 | 0,130 |
+| K-means, sem PCA | −0,001 | 0,001 | 0,000 | 0,000 | 0,003 | 0,003 | 0,021 | 0,000 | 0,026 | −0,037 | 0,060 |
+| K-means, `oracle_cv` | −0,001 | 0,001 | −0,003 | 0,000 | 0,014 | −0,006 | 0,017 | 0,003 | −0,015 | 0,042 | 0,059 |
+
+- **No MNIST:**
+  - O gap cresce com p/n, até 0,17 no GMM.
+  - O PCA é indiferente em todos os casos, exceto uma piora no K-means em p/n 5,2 (−0,037 contra 0,042).
+- **No sintético, o PCA também não reduz o gap.** As cinco "pioras" não indicam overfitting causado pelo PCA:
+  - K-means em p/n 0,5 e 1: o gap sem PCA é negativo (−0,07; o teste rende mais que o treino), e o gap com PCA fica perto de zero.
+  - GMM em p/n 2 e 4 e K-means em p/n 4 e 8: estão na região sem sinal.
+
+### Limitações
+
+- **Margem larga com n pequeno:**
+  - No MNIST, a margem passa de 0,003 (K-means, n = 70 000) para 0,06 a 0,10 com n ≤ 250.
+  - Parte dos acertos em p/n alto é falta de poder do teste para separar as regras.
+  - No extremo oposto, com n grande, perdas de 0,02 já contam como erro.
+- **`breaks.csv` resume demais:** como o MNIST não quebra no fim da faixa, ele dá "nunca quebra" para quase todas as regras, inclusive as que erram na metade de baixo. A H5 deve ser lida nas tabelas de acerto acima (`rules.csv` e `rules.png`).
+- **Corte de 50% em `has_signal`:** é escolha nossa. Ele decide quais pontos entram no ponto de quebra, sobretudo no GMM do sintético, onde o sinal some em p/n 2.
+- **Um único dataset real:** o Fashion-MNIST e o `tumors` não foram subamostrados ao longo de p/n. O `tumors` entra só como referência, pelo resultado da #5.
+- **GMM com uma inicialização (#3):** as tabelas do GMM têm mais ruído entre p/n vizinhos (por exemplo, os erros isolados de d = K e d = K − 1 em p/n 0,011 e 0,022).
+- **K fixo:** o d = K estimado ficou de fora.
