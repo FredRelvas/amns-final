@@ -29,8 +29,21 @@ uv run pytest
 | `src/pcacluster/clustering.py` | K-means, GMM e estimativa de K | 3 |
 | `src/pcacluster/rules.py` | regras para escolher *d* | 4 |
 | `src/pcacluster/sweep.py` | sweep de *d* com sementes e treino/teste | 5 |
+| `src/pcacluster/plots.py` | curvas do sweep e diferença contra o clustering sem PCA | 5 |
 
 As funções são stubs com as assinaturas combinadas e levantam `NotImplementedError`; cada pessoa implementa a sua parte na issue correspondente. As tarefas estão nas [issues](https://github.com/FredRelvas/amns-final/issues). Dados (`data/`) e saídas (`results/`) ficam fora do git.
+
+## Experimentos
+
+`scripts/run_sweep.py` roda o sweep de um dataset com K-means e GMM, calcula o *d* de cada regra em cada semente e grava tabelas e figuras em `results/<tag>/`, cujo nome junta o dataset e as opções (ex.: `mnist_n10000`, `tumors_sem-split`):
+
+```bash
+uv run python scripts/run_sweep.py --dataset digits
+uv run python scripts/run_sweep.py --dataset tumors --K 11 --test-size 0
+uv run python scripts/run_sweep.py --dataset mnist --n 10000 --grid 1-30,35-100:5,120-600:40
+```
+
+As opções estão em `--help`. O que cada arquivo de saída contém e como ler os resultados está na seção da issue #5 em [`docs/DECISOES.md`](docs/DECISOES.md).
 
 ## Sementes
 

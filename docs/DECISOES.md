@@ -305,3 +305,197 @@ O verdadeiro d no sintético é K−1 = 9.
 
 - **MP σ² = 1 nas imagens:** com dados só centralizados, σ² = 1 não é o nível de ruído, e a regra devolve centenas de componentes. Use essa variante apenas no `tumors` e no sintético com `noise_std=1`.
 - **Custo:** a análise paralela e a simulação do MP custam ~20 s com 3500 × 652. Se o sweep com MNIST completo ficar lento, reduzir `n_perm` ou `n_sim`.
+
+## Issue #5: Sweep e comparação (P4)
+
+O código fica em `sweep.py` (sweep e análise), `plots.py` (figuras) e `scripts/run_sweep.py` (um comando por dataset). A regra de Gavish e Donoho entrou em `rules.py`.
+
+### O que o `run_sweep` faz
+
+Segue o protocolo da seção "Treino e teste" acima, com estas decisões:
+
+| Peça | Decisão | Motivo |
+|---|---|---|
+| PCA | ajustado uma vez por semente, com o maior *d* da grade; o PCA com *d* componentes são as *d* primeiras colunas | os componentes são aninhados, então o resultado é o mesmo de ajustar um PCA por *d*, e o custo cai de um ajuste por *d* para um por semente. O teste `test_run_sweep_matches_an_independent_pca_per_d` compara com um PCA ajustado do zero para cada *d* e obtém o mesmo ARI e o mesmo erro de reconstrução |
+| `svd_solver="full"` | SVD exata | com o padrão (`"auto"`), o scikit-learn pode escolher o solver aleatorizado, cujo resultado depende de semente |
+| Linha "sem PCA" | cada semente ganha uma linha com `space="full"` e `d = p_eff`: o clustering dos dados pré-processados, sem PCA | é a referência de melhora/piora. Não dá para usar o PCA com *d* máximo no lugar: o PCA completo só gira os dados, o que não muda o K-means mas muda o GMM diagonal (ver "Efeito do PCA" em "Resultados") |
+| Grade de *d* | valores acima de min(n_treino − 1, p_eff) são pulados naquela semente, com aviso | o p_eff muda com a semente: no `digits` o treino fica com 60 ou 61 colunas, conforme o split |
+| Erro de reconstrução | calculado para todos os *d* de uma vez: ‖x − média‖² menos a soma dos *d* primeiros escores ao quadrado | os componentes são ortonormais (Pitágoras). Dá o mesmo valor de `metrics.reconstruction_error` (conferido no teste citado acima) |
+| `agreement_baseline` | ARI entre dois clusterings sem PCA que só diferem na inicialização (semente s e s + 10 000) | a seção 4.4 do contexto pede essa linha de base: o `agreement_full` só tem sentido comparado com a concordância do algoritmo consigo mesmo |
+| `estimate_K_flag=True` | K é estimado com `estimate_K` em cada espaço que se agrupa (sem PCA e cada *d*), e vai para a coluna `K_fit`; `K` continua sendo o número de classes | o K estimado muda com *d* (ver #3) |
+
+Colunas além das combinadas: `space`, `n_train`, `p_eff`, `K_fit`, `nmi_train`, `acc_train`, `acc_test`, `recon_err_train` e `agreement_baseline`. O `n`, o `p` e o `p_over_n` são os do dataset que entrou (`p_over_n` = 784/1000 = 0,78 no MNIST com n = 1000, como no contexto).
+
+### Comparação com as regras (`rule_ds` e `compare_rules`)
+
+- **Mesmo treino:** `rule_ds` chama a mesma função `prepare` do sweep, então cada regra vê exatamente o `X_train` que o sweep agrupa, semente por semente.
+- **Regras comparadas:** MP com σ² estimado e com σ² = 1, análise paralela, Gavish e Donoho, d = K, d = K − 1, 90% da variância, Kaiser e cotovelo. Com `--k-est`, também d = K estimado e d = K estimado − 1, com K estimado no espaço completo, que é o procedimento do quadro do professor.
+- **d = 0:** uma regra de ruído pode não achar nenhum componente (sinal abaixo do ruído). O clustering precisa de pelo menos uma dimensão, então o sweep usa `d_used = max(d, 1)`. A coluna `d` guarda o valor original.
+- **Os *d* das regras entram na grade:** o script acrescenta à grade todos os `d_used` de todas as sementes, para que o desempenho no *d* de cada regra seja medido, nunca interpolado.
+- **Perda da regra:** para cada semente, ARI no *d* da regra menos ARI no melhor *d* (o máximo da curva média), na mesma semente. Pareado, porque split e inicialização são os mesmos.
+
+### Melhor *d*: máximo, platô e `oracle_cv`
+
+- **Máximo da curva (`d_best`):** o *d* de maior ARI médio entre as sementes. A média só usa os *d* presentes em todas as sementes.
+- **Platô (`d_plateau`):** o menor *d* cuja média atinge 95% do máximo. O 95% vem da seção 4.5 do contexto e foi escolhido pelo grupo, sem fonte.
+- **`oracle_cv` (validação cruzada entre sementes):** para cada semente s, escolhe o *d* pelo máximo da curva média das outras sementes e mede o ARI na semente s. O máximo da curva é otimista: entre dezenas de *d* com ARI parecido, o maior tende a ser o que teve sorte nas sementes usadas. O `oracle_cv` mede o que escolher *d* com os rótulos rende numa repetição nova, e por isso é a referência justa para as regras. A coluna `loss_cv` do `compare.csv` é a perda contra ele: negativa quer dizer que a regra, sem rótulos, rende mais do que escolher *d* olhando os rótulos.
+
+### Melhora, piora ou indiferente
+
+Para cada *d* e cada regra, a diferença ARI(PCA) − ARI(sem PCA) é tomada por semente (pareada) e resumida pela média e por um intervalo de confiança t de 95%.
+
+| Classe | Condição |
+|---|---|
+| melhora | diferença média maior que a margem **e** intervalo de 95% acima de zero |
+| piora | diferença média menor que −margem **e** intervalo de 95% abaixo de zero |
+| indiferente | qualquer outro caso |
+
+A margem é 1 desvio-padrão do ARI sem PCA entre as sementes, como propõe a seção 4.3 do contexto (o "1" foi escolhido pelo grupo, sem fonte).
+
+**Desvio em relação à proposta do contexto:** a proposta usava só a margem. Exigir também o intervalo evita chamar de melhora uma diferença que o ruído entre sementes explica. Quantas classificações mudam está em "Classificação: efeito de exigir o intervalo", nos resultados.
+
+### Regra nova: limiar ótimo de Gavish e Donoho (`d_gavish_donoho`)
+
+A leitura da P4 (Gavish e Donoho, 2014) dá um limiar para valores singulares com nível de ruído desconhecido: manter os valores singulares acima de ω(β)·y_med, em que y_med é a mediana dos valores singulares e β = min(n, p)/max(n, p).
+
+- **ω(β) = λ\*(β)/√μ_β**, com λ\*(β) da eq. (11) do artigo e μ_β a mediana da distribuição de Marchenko-Pastur de razão β, calculada por integração numérica (`scipy.integrate.quad` e `brentq`).
+- **Conferência com o artigo:** a conta reproduz a Tabela IV do artigo (ω(β) de β = 0,05 a 1) com diferença máxima de 0,0007; ω(1) = 2,858, como no resumo; e a aproximação cúbica da eq. (5), 0,56β³ − 0,95β² + 1,82β + 1,43, fica a menos de 0,02 da conta exata em β de 0,05 a 1 (teste `test_gavish_donoho_omega_matches_the_paper`). A mediana μ_β bate com uma simulação de Monte Carlo (0,830 contra 0,832, com β = 0,5).
+- **Diferença para o MP:** o MP conta o que está acima da borda do ruído (2 vezes a escala do ruído numa matriz quadrada). O Gavish e Donoho é mais exigente (2,31 vezes): só mantém o componente cuja estimativa ajuda a recuperar o sinal. Testes: ruído puro dá no máximo 1, 5 spikes plantados dão 5, e o sintético dá 9 = K − 1.
+
+### Saídas do script
+
+O `scripts/run_sweep.py` grava em `results/<tag>/`:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `sweep.csv` | uma linha por algoritmo, semente e *d* (saída do `run_sweep`) |
+| `rules.csv` | *d* de cada regra em cada semente |
+| `compare.csv` | perda de cada regra (`loss_mean`, `loss_cv`), fração das sementes no platô (`in_plateau`) e efeito contra o sem PCA |
+| `effect.csv` | melhora/piora/indiferente para cada *d* |
+| `best.csv` | máximo, platô, `oracle_cv`, margem e `agreement_baseline` médio |
+| `curves.png` | ARI por *d* (média ± 1 DP entre sementes), sem PCA tracejado e, embaixo, o *d* de cada regra (mediana e faixa entre sementes) |
+| `effect.png` | diferença para o sem PCA com o intervalo de 95% e a faixa da margem |
+
+### Resultados
+
+Todos com K = número de classes, 10 sementes (0 a 9) e o ARI como métrica: o de teste quando há split e o de todos os dados no `tumors`. Comandos:
+
+```bash
+uv run python scripts/run_sweep.py --dataset synthetic
+uv run python scripts/run_sweep.py --dataset digits
+uv run python scripts/run_sweep.py --dataset mnist --n 10000 --grid 1-30,35-100:5,120-600:40
+uv run python scripts/run_sweep.py --dataset fashion_mnist --n 10000 --grid 1-30,35-100:5,120-600:40
+uv run python scripts/run_sweep.py --dataset tumors --K 11 --test-size 0
+```
+
+| Dataset | n de treino | p_eff | p/n do dataset | Grade de d | Divisão |
+|---|---|---|---|---|---|
+| sintético | 700 | 50 | 0,050 | todos de 1 a 50 | 70% treino, 30% teste |
+| digits | 1257 | 60 a 61 | 0,036 | todos de 1 a 61 | 70% treino, 30% teste |
+| MNIST | 7000 | 660 a 676 | 0,078 | 87 valores de 1 a 621 | 70% treino, 30% teste |
+| Fashion | 7000 | 783 a 784 | 0,078 | 75 valores de 1 a 773 | 70% treino, 30% teste |
+| tumors | 174 | 12533 | 72,029 | todos de 1 a 173 | sem split |
+
+O sintético é o padrão (K = 10, sinal em K − 1 = 9 dimensões). No MNIST e no Fashion-MNIST, cada semente sorteia 10 000 imagens. Nesses dois a grade é esparsa (de 1 a 30, depois de 5 em 5 até 100 e de 40 em 40 até 600) mais os *d* escolhidos pelas regras. O sweep completo levou 45 min no MNIST e 26 min no Fashion-MNIST.
+
+**Conferência com números de fora do sweep.** K-means sem PCA no MNIST: ARI 0,365 e ACC 0,536. A #2 mediu ARI 0,360 e ACC 0,545 com 10 000 amostras sem split, e a literatura cita ACC ≈ 53%. No `KBENCH`, reduzir o MNIST para 30 dimensões deu ARI 0,36; aqui o máximo é 0,368, em d = 27.
+
+#### Efeito do PCA
+
+| Dataset | Algoritmo | Sem PCA | Máximo da curva (d) | Platô de 95% (d) | `oracle_cv` | Efeito no máximo (diferença) |
+|---|---|---|---|---|---|---|
+| sintético | kmeans | 0,997 ± 0,005 | 0,998 (9) | 0,979 (8) | 0,998 | indiferente (+0,001) |
+| sintético | gmm | 0,898 ± 0,079 | 0,972 (46) | 0,945 (8) | 0,851 | indiferente (+0,073) |
+| digits | kmeans | 0,653 ± 0,016 | 0,669 (48) | 0,647 (9) | 0,669 | indiferente (+0,016) |
+| digits | gmm | 0,465 ± 0,057 | 0,631 (15) | 0,604 (9) | 0,607 | melhora (+0,166) |
+| MNIST | kmeans | 0,365 ± 0,015 | 0,368 (27) | 0,352 (8) | 0,360 | indiferente (+0,003) |
+| MNIST | gmm | 0,165 ± 0,027 | 0,327 (8) | 0,325 (7) | 0,318 | melhora (+0,161) |
+| Fashion | kmeans | 0,344 ± 0,015 | 0,366 (58) | 0,349 (6) | 0,349 | melhora (+0,022) |
+| Fashion | gmm | 0,317 ± 0,021 | 0,371 (8) | 0,353 (5) | 0,371 | melhora (+0,054) |
+| tumors | kmeans | 0,340 ± 0,041 | 0,461 (17) | 0,454 (16) | 0,442 | melhora (+0,121) |
+| tumors | gmm | 0,317 ± 0,064 | 0,472 (19) | 0,460 (13) | 0,405 | melhora (+0,155) |
+
+A diferença e o efeito são contra o sem PCA, no *d* do máximo, pela regra de "Melhora, piora ou indiferente".
+
+- **K-means:** no máximo da curva, o PCA é indiferente no sintético, no `digits` e no MNIST (diferença de +0,001 a +0,016) e melhora no Fashion-MNIST (+0,022) e no `tumors` (+0,121, com p/n = 72). A partir do platô (d entre 6 e 16) a curva fica plana: o máximo cai em d = 27 a 58 nas imagens, mas com ganho de no máximo 0,022 sobre o platô.
+- **GMM:** o PCA melhora nos quatro datasets reais (+0,054 a +0,166), com o máximo em d pequeno (8 a 19). Com muitos componentes o ARI cai abaixo do sem PCA: a partir de d = 54 no `digits`, 83 no Fashion-MNIST, 85 no `tumors` e 210 no MNIST.
+- **PCA completo não é "sem PCA" no GMM:** no K-means, o PCA com todos os componentes dá exatamente o mesmo ARI que o sem PCA (diferença 0,000 em todas as sementes do sintético, do `digits` e do `tumors`), porque só gira os dados. No GMM diagonal a diferença chega a 0,375 (`digits`). Por isso o sem PCA tem linha própria.
+
+#### Perda de cada regra
+
+Perda = ARI no *d* da regra menos ARI no máximo da curva, pareada por semente e com média nas 10 sementes. Entre parênteses, a mediana do *d* escolhido. M e P marcam as regras cujo *d* melhora ou piora o resultado em relação ao sem PCA (as demais são indiferentes).
+
+K-means:
+
+| Regra | sintético | digits | MNIST | Fashion | tumors |
+|---|---|---|---|---|---|
+| MP, σ² estimado | 0,000 (9) | 0,016 (26) | 0,008 (257) | 0,019 (277,5) | 0,134 (67) |
+| MP, σ² = 1 | 0,000 (9) | 0,013 (44) | 0,003 (618) | 0,022 (771,5) | 0,055 (24) M |
+| análise paralela | 0,000 (9) | 0,022 (9) | 0,010 (43) | 0,017 (32) | 0,058 (28) M |
+| Gavish e Donoho | 0,000 (9) | 0,018 (20) | 0,006 (208,5) | 0,014 (219) | 0,036 (32) M |
+| d = K | 0,000 (10) | 0,038 (10) | 0,020 (10) P | 0,020 (10) | 0,074 (11) M |
+| d = K − 1 | 0,000 (9) | 0,022 (9) | 0,019 (9) P | 0,012 (9) | 0,078 (10) |
+| 90% da variância | 0,011 (40) | 0,014 (21) | 0,003 (86) | 0,012 (81) | 0,135 (110) |
+| Kaiser | 0,000 (10) | 0,013 (14) | 0,006 (78) | 0,010 (59) | 0,121 (172) |
+| cotovelo | 0,000 (9) | 0,020 (12) | 0,007 (43,5) | 0,020 (14) | 0,074 (11) M |
+| sem PCA | 0,001 (50) | 0,016 (61) | 0,003 (667) | 0,022 (784) | 0,121 (12533) |
+
+GMM:
+
+| Regra | sintético | digits | MNIST | Fashion | tumors |
+|---|---|---|---|---|---|
+| MP, σ² estimado | 0,002 (9) | 0,092 (26) M | 0,177 (257) | 0,172 (277,5) P | 0,204 (67) |
+| MP, σ² = 1 | 0,002 (9) | 0,137 (44) | 0,214 (618) P | 0,226 (771,5) P | 0,016 (24) M |
+| análise paralela | 0,002 (9) | 0,027 (9) M | 0,125 (43) | 0,036 (32) | 0,007 (28) M |
+| Gavish e Donoho | 0,002 (9) | 0,062 (20) M | 0,181 (208,5) | 0,161 (219) P | 0,012 (32) M |
+| d = K | 0,018 (10) | 0,051 (10) M | 0,011 (10) M | 0,017 (10) M | 0,043 (11) M |
+| d = K − 1 | 0,002 (9) | 0,027 (9) M | 0,041 (9) M | 0,007 (9) M | 0,049 (10) M |
+| 90% da variância | 0,024 (40) | 0,019 (21) M | 0,128 (86) M | 0,070 (81) | 0,263 (110) P |
+| Kaiser | 0,005 (10) | 0,012 (14) M | 0,136 (78) | 0,061 (59) | 0,257 (172) P |
+| cotovelo | −0,009 (9) M | 0,030 (12) M | 0,120 (43,5) M | 0,022 (14) M | 0,043 (11) M |
+| sem PCA | 0,073 (50) | 0,166 (61) | 0,161 (667) | 0,054 (784) | 0,155 (12533) |
+
+- **Sintético:** as regras de ruído, d = K − 1, Kaiser e cotovelo escolhem 9 ou 10 e perdem no máximo 0,005 (o d = K, no GMM, perde 0,018). O 90% da variância escolhe 40.
+- **K-means em imagens:** todas as regras ficam a no máximo 0,038 do máximo, porque a curva é plana depois do platô. A menor perda foi do Kaiser no `digits` e no Fashion-MNIST e do MP com σ² = 1 no MNIST.
+- **GMM em imagens:** MP (os dois) e Gavish e Donoho escolhem de 20 a 772 componentes, em geral muito além do máximo, e perdem de 0,062 a 0,226. d = K e d = K − 1 perdem no máximo 0,051 e têm a menor perda no MNIST (d = K) e no Fashion-MNIST (d = K − 1). No MNIST e no Fashion-MNIST, 90% da variância e Kaiser perdem menos que o MP e o Gavish e Donoho.
+- **`tumors` (p/n = 72):** o padrão se inverte. Análise paralela, Gavish e Donoho e MP com σ² = 1 têm as menores perdas no GMM (0,007 a 0,016), e o Gavish e Donoho tem a menor no K-means (0,036). 90% da variância (110 componentes) e Kaiser (172 de 173) perdem até 0,263 e pioram o GMM em relação ao sem PCA.
+- **MP com σ² estimado:** em nenhum dataset real teve a menor perda; no GMM perdeu de 0,092 a 0,204 em todos eles. No piloto, com o KNN, ela era a melhor regra.
+- **d = K estimado** (`digits`, K estimado sem PCA, `--k-est`): com o BIC, K = 20 em todas as sementes do K-means e de 18 a 20 no GMM, o teto da grade, como já se viu na #3. Com a silhueta, mediana 9 (9 a 17) no K-means e 12 (9 a 20) no GMM. A perda (0,018 a 0,055) fica na faixa do d = K com o K verdadeiro (0,038 e 0,051).
+
+#### Máximo da curva contra `oracle_cv`
+
+A diferença entre o máximo e o `oracle_cv` ficou entre 0,000 e 0,024 em 8 dos 10 casos. As exceções são as curvas mais ruidosas: GMM no sintético (0,121) e no `tumors` (0,067). No sintético com GMM, todas as regras renderam mais que o `oracle_cv` (`loss_cv` ≤ 0): escolher *d* olhando os rótulos de outras sementes rendeu menos que qualquer regra.
+
+#### Concordância com o clustering sem PCA
+
+| Dataset | Algoritmo | `agreement_full` no máximo | `agreement_baseline` |
+|---|---|---|---|
+| sintético | kmeans | 1,00 | 1,00 |
+| sintético | gmm | 0,87 | 0,83 |
+| digits | kmeans | 0,94 | 0,92 |
+| digits | gmm | 0,49 | 0,54 |
+| MNIST | kmeans | 0,82 | 0,82 |
+| MNIST | gmm | 0,14 | 0,39 |
+| Fashion | kmeans | 0,75 | 0,81 |
+| Fashion | gmm | 0,34 | 0,73 |
+| tumors | kmeans | 0,50 | 0,45 |
+| tumors | gmm | 0,37 | 0,46 |
+
+No K-means, a concordância no máximo fica perto da linha de base (de −0,06 a +0,05). No GMM do MNIST ela cai para 0,14 enquanto o ARI dobra (0,165 para 0,327): o clustering com PCA é outro, e melhor. É o caso da seção 4.5 do contexto: concordância com o clustering original não mede qualidade.
+
+#### Classificação: efeito de exigir o intervalo
+
+Com só a margem, 50 das 890 combinações de dataset, algoritmo e *d* teriam outra classe (melhora ou piora em vez de indiferente). O maior grupo é o K-means no `tumors` (17), em que a margem é 0,041 e a variação entre sementes vem só da inicialização.
+
+### Limitações
+
+- **MNIST e Fashion-MNIST com 10 000 amostras e grade esparsa:** o máximo é o da grade. Os *d* das regras foram medidos exatamente.
+- **`tumors` sem split:** os dados são os mesmos em todas as sementes, então o desvio-padrão mede só a inicialização do algoritmo, e as regras dão o mesmo *d* em todas as sementes.
+- **GMM com uma inicialização (#3):** as curvas do GMM oscilam mais que as do K-means, e o máximo delas é menos confiável. Por isso o `oracle_cv` e o platô acompanham o máximo nas tabelas.
+- **K fixo:** todos os sweeps usam o número de classes. A versão com K estimado em cada *d* (`estimate_K_flag=True`) está implementada e testada, mas não foi rodada nos datasets.
+
+### Para a #6
+
+- O `run_sweep` com `test_size=0` serve para o p/n alto, e o script sorteia uma subamostra por semente com `--n`. Exemplo: `--dataset mnist --n 500 --test-size 0`.
+- A diferença treino–teste da H4 sai das colunas `ari_train` e `ari_test` do `sweep.csv`.
+- A perda de cada regra em função de p/n (H5) sai do `compare.csv` de cada n.

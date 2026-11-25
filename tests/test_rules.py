@@ -5,6 +5,7 @@ from pcacluster.data import Preprocessor, load_dataset
 from pcacluster.rules import (
     d_elbow,
     d_from_K,
+    d_gavish_donoho,
     d_kaiser,
     d_marchenko_pastur,
     d_parallel_analysis,
@@ -112,3 +113,35 @@ def test_parallel_analysis_is_reproducible_by_seed():
 def test_unknown_sigma2_string_is_rejected():
     with pytest.raises(ValueError):
         d_marchenko_pastur(np.zeros((10, 3)), sigma2="mean")
+
+
+def test_gavish_donoho_omega_matches_the_paper():
+    # Gavish and Donoho (2014): omega(1) = 2.858 and the cubic approximation
+    # 0.56 b^3 - 0.95 b^2 + 1.82 b + 1.43 is within 0.02.
+    from pcacluster.rules import _gavish_donoho_omega
+
+    assert _gavish_donoho_omega(1.0) == pytest.approx(2.858, abs=1e-3)
+    # Table IV of the paper.
+    table = {0.05: 1.5194, 0.25: 1.8371, 0.5: 2.1711, 0.75: 2.5011, 1.0: 2.8582}
+    for b, omega in table.items():
+        assert _gavish_donoho_omega(b) == pytest.approx(omega, abs=1e-3)
+    for b in (0.05, 0.1, 0.25, 0.5, 0.75):
+        cubic = 0.56 * b**3 - 0.95 * b**2 + 1.82 * b + 1.43
+        assert _gavish_donoho_omega(b) == pytest.approx(cubic, abs=0.02)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_gavish_donoho_on_noise_and_spikes(seed):
+    rng = np.random.default_rng(seed)
+    assert d_gavish_donoho(rng.standard_normal((500, 50))) <= 1
+    n, p, k = 500, 50, 5
+    signal = rng.standard_normal((n, k)) * 3.0 @ np.linalg.qr(
+        rng.standard_normal((p, k))
+    )[0].T
+    assert d_gavish_donoho(signal + rng.standard_normal((n, p))) == k
+
+
+def test_gavish_donoho_is_stricter_than_marchenko_pastur():
+    X = synthetic_train()
+    assert d_gavish_donoho(X) <= d_marchenko_pastur(X)
+    assert d_gavish_donoho(X) == 9

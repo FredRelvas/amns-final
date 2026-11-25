@@ -9,6 +9,8 @@ correlation matrix and the rules reduce to their usual definitions.
 from functools import lru_cache
 
 import numpy as np
+from scipy.integrate import quad
+from scipy.optimize import brentq
 
 
 def _eigenvalues(X: np.ndarray) -> np.ndarray:
@@ -79,6 +81,48 @@ def d_parallel_analysis(
     threshold = np.percentile(null, q, axis=0)
     below = _eigenvalues(X) <= threshold
     return int(np.argmax(below)) if below.any() else len(below)
+
+
+@lru_cache(maxsize=None)
+def _gavish_donoho_omega(beta: float) -> float:
+    """Coefficient omega(beta) of the optimal hard threshold for singular
+    values with unknown noise (Gavish and Donoho, 2014, eq. 5 and sec. III-D).
+
+    omega(beta) = lambda*(beta) / sqrt(mu_beta), where lambda*(beta) is the
+    optimal threshold for known noise (their eq. 11) and mu_beta is the median
+    of the Marchenko-Pastur distribution with ratio beta, found numerically.
+    omega(1) = 2.858.
+    """
+    lam = np.sqrt(
+        2 * (beta + 1) + 8 * beta / ((beta + 1) + np.sqrt(beta**2 + 14 * beta + 1))
+    )
+    lo, hi = (1 - np.sqrt(beta)) ** 2, (1 + np.sqrt(beta)) ** 2
+
+    def density(t: float) -> float:
+        return np.sqrt(max((hi - t) * (t - lo), 0.0)) / (2 * np.pi * beta * t)
+
+    def cdf(x: float) -> float:
+        return quad(density, lo, x, limit=200)[0]
+
+    mu = brentq(lambda x: cdf(x) - 0.5, lo, hi)
+    return float(lam / np.sqrt(mu))
+
+
+def d_gavish_donoho(X_train: np.ndarray) -> int:
+    """Count singular values above omega(beta) * median singular value, the
+    optimal hard threshold with unknown noise level (Gavish and Donoho, 2014),
+    with beta = min(n, p) / max(n, p).
+
+    The threshold minimizes the error of recovering the low-rank signal, so it
+    keeps only components whose estimate is useful, and is stricter than the
+    Marchenko-Pastur edge (2.31 against 2 times the noise scale for square
+    matrices). Eigenvalues are squared singular values divided by n, so the
+    rule is applied as ev > omega**2 * median(ev).
+    """
+    n, p = X_train.shape
+    ev = _eigenvalues(X_train)
+    beta = min(n, p) / max(n, p)
+    return int(np.sum(ev > _gavish_donoho_omega(beta) ** 2 * np.median(ev)))
 
 
 def d_from_K(K: int, minus_one: bool = False) -> int:
