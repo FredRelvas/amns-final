@@ -354,6 +354,8 @@ A margem é 1 desvio-padrão do ARI sem PCA entre as sementes, como propõe a se
 
 **Desvio em relação à proposta do contexto:** a proposta usava só a margem. Exigir também o intervalo evita chamar de melhora uma diferença que o ruído entre sementes explica. Quantas classificações mudam está em "Classificação: efeito de exigir o intervalo", nos resultados.
 
+**Efeito com o melhor *d*:** para dizer se o PCA com o melhor *d* melhora, a diferença é tomada no *d* que o `oracle_cv` escolhe para cada semente (`effect_at_oracle_cv`), e não no máximo da curva. O *d* do máximo é escolhido nas mesmas sementes em que a diferença é medida, então a diferença nele é otimista pelo mesmo motivo que o máximo é.
+
 ### Regra nova: limiar ótimo de Gavish e Donoho (`d_gavish_donoho`)
 
 A leitura da P4 (Gavish e Donoho, 2014) dá um limiar para valores singulares com nível de ruído desconhecido: manter os valores singulares acima de ω(β)·y_med, em que y_med é a mediana dos valores singulares e β = min(n, p)/max(n, p).
@@ -372,7 +374,7 @@ O `scripts/run_sweep.py` grava em `results/<tag>/`:
 | `rules.csv` | *d* de cada regra em cada semente |
 | `compare.csv` | perda de cada regra (`loss_mean`, `loss_cv`), fração das sementes no platô (`in_plateau`) e efeito contra o sem PCA |
 | `effect.csv` | melhora/piora/indiferente para cada *d* |
-| `best.csv` | máximo, platô, `oracle_cv`, margem e `agreement_baseline` médio |
+| `best.csv` | máximo, platô, `oracle_cv` e o efeito no *d* dele (`effect_cv`, `diff_cv`, `ci_cv_low`, `ci_cv_high`), margem e `agreement_baseline` médio |
 | `curves.png` | ARI por *d* (média ± 1 DP entre sementes), sem PCA tracejado e, embaixo, o *d* de cada regra (mediana e faixa entre sementes) |
 | `effect.png` | diferença para o sem PCA com o intervalo de 95% e a faixa da margem |
 
@@ -402,23 +404,23 @@ O sintético é o padrão (K = 10, sinal em K − 1 = 9 dimensões). No MNIST e 
 
 #### Efeito do PCA
 
-| Dataset | Algoritmo | Sem PCA | Máximo da curva (d) | Platô de 95% (d) | `oracle_cv` | Efeito no máximo (diferença) |
+| Dataset | Algoritmo | Sem PCA | Máximo da curva (d) | Platô de 95% (d) | `oracle_cv` | Efeito no *d* do `oracle_cv` (diferença) |
 |---|---|---|---|---|---|---|
 | sintético | kmeans | 0,997 ± 0,005 | 0,998 (9) | 0,979 (8) | 0,998 | indiferente (+0,001) |
-| sintético | gmm | 0,898 ± 0,079 | 0,972 (46) | 0,945 (8) | 0,851 | indiferente (+0,073) |
+| sintético | gmm | 0,898 ± 0,079 | 0,972 (46) | 0,945 (8) | 0,851 | indiferente (−0,047) |
 | digits | kmeans | 0,653 ± 0,016 | 0,669 (48) | 0,647 (9) | 0,669 | indiferente (+0,016) |
-| digits | gmm | 0,465 ± 0,057 | 0,631 (15) | 0,604 (9) | 0,607 | melhora (+0,166) |
-| MNIST | kmeans | 0,365 ± 0,015 | 0,368 (27) | 0,352 (8) | 0,360 | indiferente (+0,003) |
-| MNIST | gmm | 0,165 ± 0,027 | 0,327 (8) | 0,325 (7) | 0,318 | melhora (+0,161) |
-| Fashion | kmeans | 0,344 ± 0,015 | 0,366 (58) | 0,349 (6) | 0,349 | melhora (+0,022) |
+| digits | gmm | 0,465 ± 0,057 | 0,631 (15) | 0,604 (9) | 0,607 | melhora (+0,142) |
+| MNIST | kmeans | 0,365 ± 0,015 | 0,368 (27) | 0,352 (8) | 0,360 | indiferente (−0,005) |
+| MNIST | gmm | 0,166 ± 0,027 | 0,327 (8) | 0,325 (7) | 0,318 | melhora (+0,152) |
+| Fashion | kmeans | 0,344 ± 0,015 | 0,366 (58) | 0,349 (6) | 0,349 | indiferente (+0,005) |
 | Fashion | gmm | 0,317 ± 0,021 | 0,371 (8) | 0,353 (5) | 0,371 | melhora (+0,054) |
-| tumors | kmeans | 0,340 ± 0,041 | 0,461 (17) | 0,454 (16) | 0,442 | melhora (+0,121) |
-| tumors | gmm | 0,317 ± 0,064 | 0,472 (19) | 0,460 (13) | 0,405 | melhora (+0,155) |
+| tumors | kmeans | 0,340 ± 0,041 | 0,461 (17) | 0,454 (16) | 0,442 | melhora (+0,102) |
+| tumors | gmm | 0,317 ± 0,064 | 0,472 (19) | 0,460 (13) | 0,405 | melhora (+0,087) |
 
-A diferença e o efeito são contra o sem PCA, no *d* do máximo, pela regra de "Melhora, piora ou indiferente".
+A diferença e o efeito são contra o sem PCA, no *d* que o `oracle_cv` escolhe para cada semente, pela regra de "Melhora, piora ou indiferente". No *d* do máximo, a classe só muda no Fashion-MNIST com K-means: seria melhora (+0,022 em d = 58), por viés de seleção.
 
-- **K-means:** no máximo da curva, o PCA é indiferente no sintético, no `digits` e no MNIST (diferença de +0,001 a +0,016) e melhora no Fashion-MNIST (+0,022) e no `tumors` (+0,121, com p/n = 72). A partir do platô (d entre 6 e 16) a curva fica plana: o máximo cai em d = 27 a 58 nas imagens, mas com ganho de no máximo 0,022 sobre o platô.
-- **GMM:** o PCA melhora nos quatro datasets reais (+0,054 a +0,166), com o máximo em d pequeno (8 a 19). Com muitos componentes o ARI cai abaixo do sem PCA: a partir de d = 54 no `digits`, 83 no Fashion-MNIST, 85 no `tumors` e 210 no MNIST.
+- **K-means:** o PCA é indiferente no sintético, no `digits`, no MNIST e no Fashion-MNIST (diferença de −0,005 a +0,016) e melhora só no `tumors` (+0,102, com p/n = 72). A partir do platô (d entre 6 e 16) a curva fica plana: o máximo cai em d = 27 a 58 nas imagens, mas com ganho de no máximo 0,022 sobre o platô.
+- **GMM:** o PCA melhora nos quatro datasets reais (+0,054 a +0,152), com o máximo em d pequeno (8 a 19). Com muitos componentes o ARI cai abaixo do sem PCA: a partir de d = 54 no `digits`, 83 no Fashion-MNIST, 85 no `tumors` e 210 no MNIST.
 - **PCA completo não é "sem PCA" no GMM:** no K-means, o PCA com todos os componentes dá exatamente o mesmo ARI que o sem PCA (diferença 0,000 em todas as sementes do sintético, do `digits` e do `tumors`), porque só gira os dados. No GMM diagonal a diferença chega a 0,375 (`digits`). Por isso o sem PCA tem linha própria.
 
 #### Perda de cada regra
@@ -481,7 +483,7 @@ A diferença entre o máximo e o `oracle_cv` ficou entre 0,000 e 0,024 em 8 dos 
 | tumors | kmeans | 0,50 | 0,45 |
 | tumors | gmm | 0,37 | 0,46 |
 
-No K-means, a concordância no máximo fica perto da linha de base (de −0,06 a +0,05). No GMM do MNIST ela cai para 0,14 enquanto o ARI dobra (0,165 para 0,327): o clustering com PCA é outro, e melhor. É o caso da seção 4.5 do contexto: concordância com o clustering original não mede qualidade.
+No K-means, a concordância no máximo fica perto da linha de base (de −0,06 a +0,05). No GMM do MNIST ela cai para 0,14 enquanto o ARI dobra (0,166 para 0,327): o clustering com PCA é outro, e melhor. É o caso da seção 4.5 do contexto: concordância com o clustering original não mede qualidade.
 
 #### Classificação: efeito de exigir o intervalo
 

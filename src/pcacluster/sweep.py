@@ -347,6 +347,21 @@ def effect_vs_full(df: pd.DataFrame, score: str, k: float = 1.0) -> pd.DataFrame
     return pd.DataFrame(rows)
 
 
+def effect_at_oracle_cv(df: pd.DataFrame, score: str, k: float = 1.0) -> dict:
+    """Classify, as in effect_vs_full, the paired difference against no PCA at
+    the d that oracle_cv chooses for each seed.
+
+    The difference at d_best is biased upwards, because d_best is chosen on
+    the same seeds it is measured on. Here d is chosen on the other seeds, so
+    this is the classification of "PCA with the best d" that the conclusions
+    use.
+    """
+    full = df[df["space"] == "full"].set_index("seed")[score]
+    cv = oracle_cv(df, score).set_index("seed")["score"]
+    diff = (cv - full.reindex(cv.index)).to_numpy(dtype=float)
+    return _classify(diff, k * float(full.std(ddof=1)))
+
+
 def rule_ds(
     X: np.ndarray,
     y: np.ndarray,

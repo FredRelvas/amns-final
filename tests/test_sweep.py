@@ -13,6 +13,7 @@ from pcacluster.sweep import (
     best_d,
     compare_rules,
     default_score,
+    effect_at_oracle_cv,
     effect_vs_full,
     oracle_cv,
     prepare,
@@ -206,6 +207,14 @@ def test_oracle_cv_picks_d_on_the_other_seeds():
     cv = oracle_cv(df, "s").set_index("seed")
     assert cv.loc[2, "d"] == 1 and cv.loc[2, "score"] == pytest.approx(0.1)
     assert cv.loc[0, "d"] == 2  # mean of seeds 1 and 2: d=1 0.45, d=2 0.775
+
+
+def test_effect_at_oracle_cv_pairs_the_cv_score_with_no_pca(small_sweep):
+    out = effect_at_oracle_cv(small_sweep, "ari_test")
+    cv = oracle_cv(small_sweep, "ari_test").set_index("seed")["score"]
+    full = small_sweep[small_sweep["space"] == "full"].set_index("seed")["ari_test"]
+    assert out["diff_mean"] == pytest.approx((cv - full).mean())
+    assert out["margin"] == pytest.approx(full.std())
 
 
 @pytest.mark.parametrize(

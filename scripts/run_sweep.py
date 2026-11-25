@@ -26,6 +26,7 @@ from pcacluster.sweep import (
     best_d,
     compare_rules,
     default_score,
+    effect_at_oracle_cv,
     effect_vs_full,
     oracle_cv,
     prepare,
@@ -137,6 +138,7 @@ def analyze(df: pd.DataFrame, rules: dict[str, pd.DataFrame], out: Path) -> None
         cmp = compare_rules(sub, rules[algo], score)
         eff = effect_vs_full(sub, score)
         cv = oracle_cv(sub, score)
+        ecv = effect_at_oracle_cv(sub, score)
         compares.append(cmp.assign(algo=algo))
         effects.append(eff.assign(algo=algo))
         bests.append(
@@ -146,6 +148,10 @@ def analyze(df: pd.DataFrame, rules: dict[str, pd.DataFrame], out: Path) -> None
                 "score": score,
                 "oracle_cv": cv["score"].mean(),
                 "oracle_cv_d": ",".join(map(str, cv["d"])),
+                "effect_cv": ecv["effect"],
+                "diff_cv": ecv["diff_mean"],
+                "ci_cv_low": ecv["ci_low"],
+                "ci_cv_high": ecv["ci_high"],
                 "margin": cmp.attrs["margin"],
                 # One value per seed, taken from the no-PCA rows.
                 "agreement_baseline": full["agreement_baseline"].mean(),
