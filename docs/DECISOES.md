@@ -504,7 +504,7 @@ Com só a margem, 50 das 890 combinações de dataset, algoritmo e *d* teriam ou
 
 ## Issue #6: p/n, overfitting e ponto de quebra (P5)
 
-O código fica em `pn.py` (análise ao longo de p/n), `plots.py` (`plot_pn_rules` e `plot_pn_gap`) e `scripts/run_pn.py` (um comando por dataset). Como rodar está em `docs/DESENHO_P5.md`. Tudo reaproveita o `run_sweep` e os critérios da #5, sem critério novo de comparação.
+O código fica em `pn.py` (análise ao longo de p/n), `plots.py` (`plot_pn_rules` e `plot_pn_gap`) e `scripts/run_pn.py` (um comando por dataset). Como rodar está no README, em "Experimentos". Tudo reaproveita o `run_sweep` e os critérios da #5, sem critério novo de comparação.
 
 ### O que foi rodado
 
@@ -532,6 +532,17 @@ O código fica em `pn.py` (análise ao longo de p/n), `plots.py` (`plot_pn_rules
 | Overfitting (`train_test_gap`) | gap = `ari_train − ari_test`. O gap sem PCA e o gap no *d* do `oracle_cv` são comparados semente a semente pelo `_classify`, com margem de 1 DP do gap sem PCA. "Melhora" quer dizer que o PCA reduz o gap | mesma régua da #5, aplicada ao gap. Só existe com split |
 | Sintético | p = 1000, ruído 1, separação 5 | p alto permite chegar a p/n = 8 com n ≥ 125. Com separação 5, o sinal é claro em p/n baixo e some dentro da faixa. A teoria (transição BBP) prevê a perda do sinal perto de p/n ≈ (separação²/K)² = 6,25 |
 | K estimado | fora | o critério de K continua em aberto (#3) |
+
+### Saídas do script
+
+O `scripts/run_pn.py` grava em `results/pn_<nome>/`, além das pastas de cada n:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `rules.csv` | por n, split, algoritmo e regra: *d* mediano, diferença para o `oracle_cv`, intervalo, acerto (`hit`) e se o p/n tem sinal (`signal`) |
+| `breaks.csv` | ponto de quebra de cada regra e o primeiro p/n sem sinal (`collapse`) |
+| `gap.csv`, `gap_by_d.csv` | H4: gap sem PCA e no *d* do `oracle_cv`, e gap por *d* |
+| `rules.png`, `gap.png` | as duas coisas ao longo de p/n. Em `rules.png`, a região sem sinal aparece sombreada |
 
 ### Resultados
 
@@ -579,6 +590,8 @@ GMM:
 - **No GMM o problema colapsa primeiro.** O sinal some em p/n 2, antes de MP, análise paralela e d = K quebrarem.
 - **Por que as regras de ruído quebram:** com p/n alto, os autovalores do sinal afundam abaixo da borda do ruído, e as regras param de vê-los. A mediana do *d* do MP com σ² estimado é 9, 9, 9, 4,5, 1 e 1 ao longo da faixa. A do Gavish e Donoho cai para 3 já em p/n 0,5, e por isso ele quebra cedo. Kaiser e 90% da variância fazem o contrário: escolhem centenas de componentes de ruído (Kaiser: de 428 a 86).
 - **Quebra antes do previsto:** a perda acontece entre p/n 1 e 2 (2,9 no treino), antes do limite assintótico de 6,25. Com n finito, os autovalores do sinal se misturam ao ruído antes do limite.
+  - Pela fórmula do autovalor amostral de um spike, (1 + ℓ)(1 + γ/ℓ), com ℓ = 2,5 e γ o p/n do treino, o sinal fica 14% acima da borda do ruído, (1 + √γ)², em p/n 1 (γ = 1,43).
+  - Em p/n 2 (γ = 2,86), fica só 3,6% acima. Essa folga é pequena demais para as regras separarem o sinal com n finito.
 - **Sem split:**
   - Há mais sinal: `oracle_cv` de 0,83 (K-means) e 0,78 (GMM) em p/n 2, com colapso só em 4.
   - O padrão se repete: MP e d = K quebram entre 1 e 2 no K-means, e a análise paralela é a única que acerta em p/n 2 nos dois algoritmos.

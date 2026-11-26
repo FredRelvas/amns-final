@@ -49,20 +49,42 @@ def fake_sweep(scores: dict[int, list[float]], full: list[float]) -> pd.DataFram
     """Sweep table with ari_test by d (one value per seed) and no PCA."""
     rows = []
     for seed, f in enumerate(full):
-        rows.append({"seed": seed, "space": "full", "d": 50, "p_eff": 50,
-                     "ari_test": f, "ari_train": f})
+        rows.append(
+            {
+                "seed": seed,
+                "space": "full",
+                "d": 50,
+                "p_eff": 50,
+                "ari_test": f,
+                "ari_train": f,
+            }
+        )
         for d, values in scores.items():
-            rows.append({"seed": seed, "space": "pca", "d": d, "p_eff": 50,
-                         "ari_test": values[seed], "ari_train": values[seed] + 0.1})
+            rows.append(
+                {
+                    "seed": seed,
+                    "space": "pca",
+                    "d": d,
+                    "p_eff": 50,
+                    "ari_test": values[seed],
+                    "ari_train": values[seed] + 0.1,
+                }
+            )
     return pd.DataFrame(rows)
 
 
 def test_rule_vs_oracle_flags_a_rule_far_below_the_best_d():
-    df = fake_sweep({2: [0.30, 0.31, 0.29, 0.30], 9: [0.90, 0.91, 0.89, 0.90]},
-                    full=[0.80, 0.82, 0.78, 0.80])
-    rules = pd.DataFrame({"seed": [0, 1, 2, 3] * 2,
-                          "rule": ["good"] * 4 + ["bad"] * 4,
-                          "d_used": [9] * 4 + [2] * 4})
+    df = fake_sweep(
+        {2: [0.30, 0.31, 0.29, 0.30], 9: [0.90, 0.91, 0.89, 0.90]},
+        full=[0.80, 0.82, 0.78, 0.80],
+    )
+    rules = pd.DataFrame(
+        {
+            "seed": [0, 1, 2, 3] * 2,
+            "rule": ["good"] * 4 + ["bad"] * 4,
+            "d_used": [9] * 4 + [2] * 4,
+        }
+    )
     out = rule_vs_oracle(df, rules, "ari_test").set_index("rule")
     assert out.loc["good", "hit"]
     assert out.loc["good", "diff_mean"] == pytest.approx(0.0)
@@ -93,5 +115,5 @@ def test_pn_analysis_on_a_small_real_sweep():
     assert set(out["rule"]) == set(rules["rule"]) | {"sem_pca"}
     # The signal spans K - 1 = 3 dimensions, which K-means separates easily.
     assert out.set_index("rule").loc["K-1", "hit"]
-    by_d, summary = train_test_gap(df)
+    _, summary = train_test_gap(df)
     assert summary["effect"] in {"melhora", "piora", "indiferente"}

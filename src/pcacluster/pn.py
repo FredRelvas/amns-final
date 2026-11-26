@@ -48,8 +48,11 @@ def rule_vs_oracle(
     rows = []
     for name, g in rules.groupby("rule", sort=False):
         d = g.set_index("seed")["d_used"]
-        s = pd.Series([pca.get((seed, x), np.nan) for seed, x in d.items()],
-                      index=d.index, dtype=float)
+        s = pd.Series(
+            [pca.get((seed, x), np.nan) for seed, x in d.items()],
+            index=d.index,
+            dtype=float,
+        )
         rows.append(entry(name, d, s))
     p_eff = df[df["space"] == "full"].set_index("seed")["p_eff"]
     rows.append(entry("sem_pca", p_eff, full.astype(float)))
@@ -69,12 +72,19 @@ def train_test_gap(df: pd.DataFrame, k: float = 1.0) -> tuple[pd.DataFrame, dict
     gap = df.assign(gap=df["ari_train"] - df["ari_test"])
     full = gap[gap["space"] == "full"].set_index("seed")["gap"]
     by_d = (
-        _complete_seeds(gap).groupby("d")["gap"].agg(mean="mean", std="std")
-        .reset_index().astype({"d": str})
+        _complete_seeds(gap)
+        .groupby("d")["gap"]
+        .agg(mean="mean", std="std")
+        .reset_index()
+        .astype({"d": str})
     )
-    by_d = pd.concat([by_d, pd.DataFrame(
-        [{"d": "full", "mean": full.mean(), "std": full.std(ddof=1)}])],
-        ignore_index=True)
+    by_d = pd.concat(
+        [
+            by_d,
+            pd.DataFrame([{"d": "full", "mean": full.mean(), "std": full.std(ddof=1)}]),
+        ],
+        ignore_index=True,
+    )
 
     cv = oracle_cv(df, "ari_test").set_index("seed")["d"]
     pca = gap[gap["space"] == "pca"].set_index(["seed", "d"])["gap"]

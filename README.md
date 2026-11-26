@@ -29,9 +29,10 @@ uv run pytest
 | `src/pcacluster/clustering.py` | K-means, GMM e estimativa de K | 3 |
 | `src/pcacluster/rules.py` | regras para escolher *d* | 4 |
 | `src/pcacluster/sweep.py` | sweep de *d* com sementes e treino/teste | 5 |
-| `src/pcacluster/plots.py` | curvas do sweep e diferença contra o clustering sem PCA | 5 |
+| `src/pcacluster/pn.py` | ao longo de p/n: acerto das regras, ponto de quebra e diferença treino–teste | 6 |
+| `src/pcacluster/plots.py` | figuras do sweep e ao longo de p/n | 5 e 6 |
 
-As funções são stubs com as assinaturas combinadas e levantam `NotImplementedError`; cada pessoa implementa a sua parte na issue correspondente. As tarefas estão nas [issues](https://github.com/FredRelvas/amns-final/issues). Dados (`data/`) e saídas (`results/`) ficam fora do git.
+As tarefas estão nas [issues](https://github.com/FredRelvas/amns-final/issues). Dados (`data/`) e saídas (`results/`) ficam fora do git.
 
 ## Experimentos
 
@@ -43,7 +44,18 @@ uv run python scripts/run_sweep.py --dataset tumors --K 11 --test-size 0
 uv run python scripts/run_sweep.py --dataset mnist --n 10000 --grid 1-30,35-100:5,120-600:40
 ```
 
-As opções estão em `--help`. O que cada arquivo de saída contém e como ler os resultados está na seção da issue #5 em [`docs/DECISOES.md`](docs/DECISOES.md).
+`scripts/run_pn.py` repete o sweep para vários n, uma chamada ao `run_sweep.py` por n, e junta os resultados em `results/pn_<nome>/`. Cada n fica numa pasta própria (`n<n>` e `n<n>_sem-split`). As rodadas que já terminaram são puladas, então dá para interromper e continuar depois:
+
+```bash
+uv run python scripts/run_pn.py --name synthetic_s5 --dataset synthetic \
+    --synthetic 1000,1,5 --ns 4000,2000,1000,500,250,125 --no-split-max 4000
+uv run python scripts/run_pn.py --name mnist --dataset mnist \
+    --ns 70000,35000,10000,3500,1400,700,500,350,250,150,100 --no-split-max 3500
+```
+
+Com `--analyze-only`, o script só refaz a análise e as figuras.
+
+As opções estão em `--help`. O que cada arquivo de saída contém e como ler os resultados está nas seções das issues #5 e #6 em [`docs/DECISOES.md`](docs/DECISOES.md).
 
 ## Sementes
 

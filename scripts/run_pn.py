@@ -46,9 +46,22 @@ def run_one(args, n: int, split: bool, tag: str) -> None:
     if (RESULTS / tag / "sweep.csv").exists():
         print(f"{tag}: já existe, pulando", flush=True)
         return
-    cmd = [sys.executable, str(ROOT / "scripts" / "run_sweep.py"),
-           "--dataset", args.dataset, "--n", str(n), "--grid", args.grid,
-           "--seeds", args.seeds, "--tag", tag, "--algos", *args.algos]
+    cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "run_sweep.py"),
+        "--dataset",
+        args.dataset,
+        "--n",
+        str(n),
+        "--grid",
+        args.grid,
+        "--seeds",
+        args.seeds,
+        "--tag",
+        tag,
+        "--algos",
+        *args.algos,
+    ]
     if args.synthetic:
         cmd += ["--synthetic", args.synthetic]
     if not split:
@@ -71,7 +84,9 @@ def analyze(args) -> None:
         info = {"n": n, "p_over_n": p_over_n, "split": split, "score": score}
         for algo, sub in df.groupby("algo"):
             rules = table[table["algo"] == algo].drop(columns="algo")
-            rule_rows.append(rule_vs_oracle(sub, rules, score).assign(algo=algo, **info))
+            rule_rows.append(
+                rule_vs_oracle(sub, rules, score).assign(algo=algo, **info)
+            )
             if split:
                 by_d, summary = train_test_gap(sub)
                 gap_by_d.append(by_d.assign(algo=algo, **info))
@@ -87,9 +102,11 @@ def analyze(args) -> None:
     breaks = []
     for (split, algo, rule), g in rules.groupby(["split", "algo", "rule"]):
         no_signal = g.loc[~g["signal"], "p_over_n"]
-        breaks.append({"split": split, "algo": algo, "rule": rule}
-                      | breaking_point(g["p_over_n"], g["hit"], g["signal"])
-                      | {"collapse": no_signal.min() if len(no_signal) else None})
+        breaks.append(
+            {"split": split, "algo": algo, "rule": rule}
+            | breaking_point(g["p_over_n"], g["hit"], g["signal"])
+            | {"collapse": no_signal.min() if len(no_signal) else None}
+        )
     breaks = pd.DataFrame(breaks)
     breaks.to_csv(out / "breaks.csv", index=False)
     plot_pn_rules(rules, args.name, out / "rules.png")
@@ -100,8 +117,11 @@ def analyze(args) -> None:
         pd.concat(gap_by_d, ignore_index=True).to_csv(out / "gap_by_d.csv", index=False)
         plot_pn_gap(gap, args.name, out / "gap.png")
         with pd.option_context("display.width", 200):
-            print(gap[["algo", "n", "p_over_n", "gap_full", "gap_cv", "effect"]]
-                  .round(3).to_string(index=False))
+            print(
+                gap[["algo", "n", "p_over_n", "gap_full", "gap_cv", "effect"]]
+                .round(3)
+                .to_string(index=False)
+            )
     with pd.option_context("display.width", 200, "display.max_rows", 200):
         print(breaks.to_string(index=False))
     print(f"-> {out}")
@@ -111,11 +131,20 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--name", required=True, help="results go to results/pn_<name>")
     ap.add_argument("--dataset", required=True)
-    ap.add_argument("--ns", required=True, type=lambda s: [int(x) for x in s.split(",")])
-    ap.add_argument("--no-split-max", type=int, default=0,
-                    help="also run without split for n <= this value")
-    ap.add_argument("--grid", default="1-30,35-100:5,120-600:40",
-                    help="d grid, as in run_sweep.py (default: the #5 MNIST grid)")
+    ap.add_argument(
+        "--ns", required=True, type=lambda s: [int(x) for x in s.split(",")]
+    )
+    ap.add_argument(
+        "--no-split-max",
+        type=int,
+        default=0,
+        help="also run without split for n <= this value",
+    )
+    ap.add_argument(
+        "--grid",
+        default="1-30,35-100:5,120-600:40",
+        help="d grid, as in run_sweep.py (default: the #5 MNIST grid)",
+    )
     ap.add_argument("--seeds", default="0-9")
     ap.add_argument("--algos", nargs="+", default=["kmeans", "gmm"])
     ap.add_argument("--synthetic", default="", help="p,noise_std,separation")

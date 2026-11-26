@@ -154,29 +154,60 @@ def plot_pn_rules(rules: pd.DataFrame, title: str, path) -> None:
         _pn_axis(ax, g["p_over_n"])
         if "signal" in g and not g["signal"].all():
             lost = g.loc[~g["signal"].astype(bool), "p_over_n"].min()
-            ax.axvspan(lost, g["p_over_n"].max() * 1.15, color=MUTED, alpha=0.10,
-                       linewidth=0, label="sem sinal")
+            ax.axvspan(
+                lost,
+                g["p_over_n"].max() * 1.15,
+                color=MUTED,
+                alpha=0.10,
+                linewidth=0,
+                label="sem sinal",
+            )
         band = g.groupby("p_over_n")["margin"].first()
-        ax.fill_between(band.index, -band, band, color=BASELINE, alpha=0.12, linewidth=0)
+        ax.fill_between(
+            band.index, -band, band, color=BASELINE, alpha=0.12, linewidth=0
+        )
         ax.axhline(0, color=BASELINE, linewidth=0.8)
         for i, (rule, r) in enumerate(g.groupby("rule", sort=False)):
             r = r.sort_values("p_over_n")
             c = INK if rule == "sem_pca" else colors[i % len(colors)]
             ls = "--" if rule == "sem_pca" else "-"
             label = "sem PCA" if rule == "sem_pca" else RULE_LABELS.get(rule, rule)
-            ax.plot(r["p_over_n"], r["diff_mean"], color=c, linestyle=ls,
-                    linewidth=1.3, label=label)
+            ax.plot(
+                r["p_over_n"],
+                r["diff_mean"],
+                color=c,
+                linestyle=ls,
+                linewidth=1.3,
+                label=label,
+            )
             hit = r["hit"].astype(bool)
             ax.plot(r["p_over_n"][hit], r["diff_mean"][hit], "o", color=c, markersize=4)
-            ax.plot(r["p_over_n"][~hit], r["diff_mean"][~hit], "o", markersize=4,
-                    markerfacecolor="white", markeredgecolor=c)
-        ax.set_title(f"{algo}, {'com split' if split else 'sem split'}",
-                     fontsize=10, color=INK, loc="left")
+            ax.plot(
+                r["p_over_n"][~hit],
+                r["diff_mean"][~hit],
+                "o",
+                markersize=4,
+                markerfacecolor="white",
+                markeredgecolor=c,
+            )
+        ax.set_title(
+            f"{algo}, {'com split' if split else 'sem split'}",
+            fontsize=10,
+            color=INK,
+            loc="left",
+        )
         ax.set_xlabel("p/n", fontsize=8.5)
     axes[0][0].set_ylabel("score no d da regra − oracle_cv", fontsize=8.5)
-    axes[0][-1].legend(frameon=False, fontsize=7, loc="upper left", bbox_to_anchor=(1.01, 1))
-    fig.suptitle(f"{title}: regras contra o melhor d (vazado = erra)",
-                 fontsize=10.5, color=INK, x=0.01, ha="left")
+    axes[0][-1].legend(
+        frameon=False, fontsize=7, loc="upper left", bbox_to_anchor=(1.01, 1)
+    )
+    fig.suptitle(
+        f"{title}: regras contra o melhor d (vazado = erra)",
+        fontsize=10.5,
+        color=INK,
+        x=0.01,
+        ha="left",
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -194,16 +225,35 @@ def plot_pn_gap(gap: pd.DataFrame, title: str, path) -> None:
         _pn_axis(ax, g["p_over_n"])
         g = g.sort_values("p_over_n")
         ax.axhline(0, color=BASELINE, linewidth=0.8)
-        ax.plot(g["p_over_n"], g["gap_full"], "o--", color=BASELINE, linewidth=1.3,
-                markersize=4, label="sem PCA")
-        ax.plot(g["p_over_n"], g["gap_cv"], "o-", color=SERIES, linewidth=2,
-                markersize=4, label="PCA no d do oracle_cv")
+        ax.plot(
+            g["p_over_n"],
+            g["gap_full"],
+            "o--",
+            color=BASELINE,
+            linewidth=1.3,
+            markersize=4,
+            label="sem PCA",
+        )
+        ax.plot(
+            g["p_over_n"],
+            g["gap_cv"],
+            "o-",
+            color=SERIES,
+            linewidth=2,
+            markersize=4,
+            label="PCA no d do oracle_cv",
+        )
         ax.set_title(algo, fontsize=10, color=INK, loc="left")
         ax.set_xlabel("p/n", fontsize=8.5)
     axes[0][0].set_ylabel("ari_train − ari_test", fontsize=8.5)
     axes[0][0].legend(frameon=False, fontsize=7.5)
-    fig.suptitle(f"{title}: diferença treino–teste (H4)", fontsize=10.5, color=INK,
-                 x=0.01, ha="left")
+    fig.suptitle(
+        f"{title}: diferença treino–teste (H4)",
+        fontsize=10.5,
+        color=INK,
+        x=0.01,
+        ha="left",
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -211,7 +261,7 @@ def plot_pn_gap(gap: pd.DataFrame, title: str, path) -> None:
 
 def _pn_axis(ax, values) -> None:
     """Log p/n axis with one labelled tick per p/n of the sweep."""
-    ticks = sorted(set(float(v) for v in values))
+    ticks = sorted({float(v) for v in values})
     ax.set_xticks(ticks, [f"{t:.3g}" for t in ticks])
     ax.xaxis.set_minor_formatter(NullFormatter())
     ax.tick_params(axis="x", which="minor", length=0)
